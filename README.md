@@ -14,7 +14,34 @@ $SRC/opensource/zellij-attention
 
 The plugin should be configured with `clear_on_tab_focus "true"` if you want completed/waiting/tool states to demote back to idle when you focus the tab.
 
-If icons do not appear, verify that the background plugin is actually running in the current Zellij session. Existing or resurrected sessions may need a manual plugin reload.
+Quick-start icon configuration to copy into `~/.config/zellij/config.kdl`:
+
+```kdl
+load_plugins {
+    "file:~/.config/zellij/plugins/zellij-attention.wasm" {
+        enabled "true"
+        thinking_icon "●"
+        bash_icon "⚡"
+        read_icon "◉"
+        edit_icon "✎"
+        subagent_icon "⊜"
+        web_icon "◈"
+        other_icon "⚙"
+        waiting_icon "▶"
+        completed_icon "✓"
+        idle_icon "○"
+        clear_on_tab_focus "true"
+    }
+}
+```
+
+If icons do not appear, verify that the background plugin is actually running in the current Zellij session. Existing or resurrected sessions may need a manual plugin reload. To reload manually with the same defaults:
+
+```bash
+zellij action start-or-reload-plugin \
+  'file:~/.config/zellij/plugins/zellij-attention.wasm' \
+  --configuration 'enabled=true,thinking_icon=●,bash_icon=⚡,read_icon=◉,edit_icon=✎,subagent_icon=⊜,web_icon=◈,other_icon=⚙,waiting_icon=▶,completed_icon=✓,idle_icon=○,clear_on_tab_focus=true'
+```
 
 ## Install
 
