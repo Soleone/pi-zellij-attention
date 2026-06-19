@@ -6,11 +6,7 @@ Important: this extension does **not** rename tabs itself. It uses the plugin's 
 
 ## Requirements
 
-Install and load the Zellij plugin from:
-
-```txt
-$SRC/opensource/zellij-attention
-```
+Install and load the standalone [`zellij-attention`](https://github.com/soleone/zellij-attention) Zellij plugin.
 
 The plugin should be configured with `clear_on_tab_focus "true"` if you want completed/waiting/tool states to demote back to idle when you focus the tab.
 
