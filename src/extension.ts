@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 type AttentionEvent =
@@ -36,17 +37,23 @@ const webTools = new Set([
 	"get_search_content",
 ]);
 
+const PIPE_TIMEOUT_MS = 1_000;
+
 let enabled = false;
 let paneId: string | undefined;
 let currentEvent: AttentionEvent | undefined;
+let pendingEvent: AttentionEvent | undefined;
+let activePipe: ChildProcess | undefined;
+let deliveryStopped = false;
 let didRegisterExitHook = false;
+let didSendUnwatch = false;
 
 export default function zellijAttentionPiExtension(pi: ExtensionAPI) {
-	const unsubscribeGuardReviewPrompt = pi.events.on("guard:review-prompt", () => {
-		if (!enabled) return;
-		// Guard shows its own approval dialog inside a tool_call handler, so no normal
-		// ask_user tool event is emitted. Force the update because the Zellij plugin can
-		// demote a focused tab to idle without this process seeing that state change.
+	const unsubscribeBlocked = pi.events.on("herdr:blocked", (data) => {
+		if (!enabled || !isActiveBlockedSignal(data)) return;
+		// Guard emits this only when its approval dialog actually opens, after internal
+		// voting and any automatic recast have finished. Force the update because the
+		// Zellij plugin can demote a focused tab without this process seeing the change.
 		sendAttention("waiting", { force: true });
 	});
 
@@ -78,9 +85,8 @@ export default function zellijAttentionPiExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async () => {
-		unsubscribeGuardReviewPrompt();
-		if (!enabled) return;
-		sendAttentionSync("unwatch");
+		unsubscribeBlocked();
+		unwatchSync();
 	});
 
 	pi.registerCommand("zellij-attention", {
@@ -115,10 +121,14 @@ function configure() {
 	enabled = Boolean(process.env.ZELLIJ && paneId);
 }
 
+function isActiveBlockedSignal(data: unknown): boolean {
+	return typeof data === "object" && data !== null && "active" in data && data.active === true;
+}
+
 function registerExitHook() {
 	if (didRegisterExitHook) return;
 	didRegisterExitHook = true;
-	process.once("exit", () => sendAttentionSync("unwatch"));
+	process.once("exit", unwatchSync);
 }
 
 function eventForTool(toolName: string): AttentionEvent {
@@ -132,15 +142,49 @@ function eventForTool(toolName: string): AttentionEvent {
 }
 
 function sendAttention(event: AttentionEvent, options: { force?: boolean } = {}) {
-	if (!paneId) return;
+	if (!paneId || deliveryStopped) return;
 	if (!options.force && currentEvent === event) return;
 	currentEvent = event;
-	const child = spawn(
-		"zellij",
-		pipeArgs(event),
-		{ stdio: "ignore", detached: true },
-	);
-	child.unref();
+
+	// Only one CLI pipe may be in flight at a time. This preserves event order,
+	// while replacing queued transient states with the newest status avoids a
+	// backlog when Zellij or the plugin is slow.
+	pendingEvent = event;
+	flushPendingEvent();
+}
+
+function flushPendingEvent() {
+	if (!paneId || deliveryStopped || activePipe || !pendingEvent) return;
+
+	const event = pendingEvent;
+	pendingEvent = undefined;
+	const child = spawn("zellij", pipeArgs(event), {
+		stdio: "ignore",
+		timeout: PIPE_TIMEOUT_MS,
+	});
+	activePipe = child;
+
+	const finish = () => {
+		if (activePipe !== child) return;
+		activePipe = undefined;
+		flushPendingEvent();
+	};
+	child.once("error", finish);
+	child.once("exit", finish);
+}
+
+function stopAsyncDelivery() {
+	deliveryStopped = true;
+	pendingEvent = undefined;
+	activePipe?.kill();
+	activePipe = undefined;
+}
+
+function unwatchSync() {
+	if (!enabled || !paneId || didSendUnwatch) return;
+	didSendUnwatch = true;
+	stopAsyncDelivery();
+	sendAttentionSync("unwatch");
 }
 
 function sendAttentionSync(event: AttentionEvent) {
@@ -148,7 +192,7 @@ function sendAttentionSync(event: AttentionEvent) {
 	currentEvent = event;
 	spawnSync("zellij", pipeArgs(event), {
 		stdio: "ignore",
-		timeout: 1_000,
+		timeout: PIPE_TIMEOUT_MS,
 	});
 }
 

@@ -74,13 +74,15 @@ After that, it sends plugin events:
 - `subagent` tool → `subagent`
 - web tools → `web`
 - `ask_user` / `ask_user_question` → `waiting`
-- Guard extension `guard:review-prompt` event → `waiting`
+- A blocking extension dialog actually opening (`herdr:blocked` with `active: true`, including Guard approval) → `waiting`
 - `agent_end` → `completed`
 - `session_shutdown` / process exit → `unwatch`
 
 Because the pane is watched, the Zellij plugin should show idle (`○`) when focused instead of leaving `✓` stuck on the tab.
 
-The extension treats normal status pipe delivery as best-effort and fire-and-forget. Shutdown/unwatch uses a short synchronous send so the idle icon is removed more reliably when pi exits. Repeated identical states are skipped to reduce unnecessary tab renames/flicker, except for guard review prompts where the update is forced because focusing a tab can demote the plugin state to idle without pi seeing that state change.
+The extension sends at most one status pipe at a time so events cannot overtake each other. If Zellij is slow, queued transient states are coalesced to the newest status, and every pipe is terminated after one second to prevent leaked `zellij pipe` processes. Shutdown cancels pending delivery and sends `unwatch` synchronously so a late tool state cannot overwrite the cleanup event. Repeated identical states are skipped to reduce unnecessary tab renames/flicker, except for actual blocking prompts where the update is forced because focusing a tab can demote the plugin state to idle without pi seeing that state change.
+
+Guard's internal vote and explainer/recast passes do not trigger `waiting` or play a sound. The state changes only if Guard finishes those automatic checks and opens a dialog that genuinely requires user approval.
 
 ## Command
 
