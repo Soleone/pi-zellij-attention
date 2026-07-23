@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Pi extension that marks zellij tabs/panes when a session needs attention.",
   "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.ts"
+  },
   "pi": {
     "extensions": ["./index.ts"]
   },
